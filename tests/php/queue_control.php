@@ -41,7 +41,7 @@ test('Queue-Steuerung: zuschalten, letzte Nebenstelle schützen und persistent s
     try {
         $control = new QueueControl($cfg,$t['extensions'],$s,$action);
         eq($control->view()['ready'],true);
-        $control->change('praxis','202',true);
+        $control->change('praxis','202',true)->then(function ($result) { eq($result['ready'], true); });
         eq($commands[0][0],'QueueAdd');
         eq($commands[0][1]['Interface'],'Local/202@kienzlefon-queue-member');
         eq($commands[0][1]['StateInterface'],'PJSIP/202');

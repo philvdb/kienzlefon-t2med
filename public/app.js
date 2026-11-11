@@ -314,7 +314,7 @@ async function changeQueue(queue, extension, enabled) {
   if (data) render(data);
   try {
     const result = await api('/api/v1/queues/selection',{queue,extension,enabled});
-    if (latestData?.queue_control) latestData.queue_control = {...result,ready:true};
+    if (latestData?.queue_control) latestData.queue_control = result;
     toast('Nebenstelle ' + extension + ': ' +
       (queue === 'praxis' ? 'Normale Queue' : 'IVR 9') +
       (enabled ? ' aktiviert.' : ' pausiert.'));

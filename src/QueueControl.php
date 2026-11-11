@@ -110,15 +110,20 @@ final class QueueControl
         if ($next === $this->desired) return resolve($this->view());
         $command = $this->actionFor($queue, $extension, $enabled);
         $this->busy = true;
-        $request = $command ? ($this->ami)($command[0], $command[1]) : resolve(null);
+        try {
+            $request = $command ? ($this->ami)($command[0], $command[1]) : resolve(null);
+        } catch (\Throwable $e) {
+            $this->busy = false;
+            return reject($e);
+        }
         return $request->then(function () use ($next) {
             try {
                 $this->persist($next);
                 $this->desired = $next;
-                return $this->view();
             } finally {
                 $this->busy = false;
             }
+            return $this->view();
         }, function (\Throwable $e) {
             $this->busy = false;
             throw $e;
