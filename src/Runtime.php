@@ -16,6 +16,7 @@ final class Runtime
     private ?FhirImport $fhir = null;
     private Gdt $gdt;
     private Transfers $transfers;
+    private QueueControl $queueControl;
     private array $lookups = [];
     private array $phoneLookups = [];
     private array $jobs = [];
@@ -35,6 +36,8 @@ final class Runtime
             }
         }
         $this->transfers = new Transfers($this->state, fn(string $action, array $fields) => $this->ami->action($action,$fields), $config, $demo);
+        $this->queueControl = new QueueControl($config['queue_control'], $config['telephony']['extensions'], $this->state,
+            fn(string $action, array $fields) => $this->ami->action($action, $fields), $demo);
     }
     public function start(): void
     {
@@ -63,7 +66,7 @@ final class Runtime
         if ($this->syncing || !$this->ami?->connected()) return;
         $this->syncing = true; $started = microtime(true); $this->state->beginSync();
         all([$this->ami->action('CoreShowChannels', [], 'CoreShowChannelsComplete'), $this->ami->action('QueueStatus', [], 'QueueStatusComplete')])->then(function ($snapshots) use ($started) {
-            $this->state->finishSync($snapshots[0], $snapshots[1]); $this->syncing = false; $this->reconcileOutgoing($started); $this->transfers->event([]); $this->refreshLookups();
+            $this->state->finishSync($snapshots[0], $snapshots[1]); $this->syncing = false; $this->queueControl->restore(); $this->reconcileOutgoing($started); $this->transfers->event([]); $this->refreshLookups();
         }, function () { $this->syncing = false; $this->ami?->disconnect(); });
     }
     private function refreshLookups(): void
@@ -287,7 +290,14 @@ final class Runtime
         $view['outgoing'] = array_values(array_map($this->publicOutgoing(...), array_filter($this->outgoing, fn($call) => !($call['_hidden'] ?? false))));
         $view['transfers'] = $this->transfers->view();
         $view['patient_directory'] = $this->directoryStatus();
+        $view['queue_control'] = $this->queueControl->view();
         return $view;
+    }
+    public function queueSelection(array $input): PromiseInterface
+    {
+        if (!is_string($input['queue'] ?? null) || !is_string($input['extension'] ?? null)
+            || !is_bool($input['enabled'] ?? null)) throw new \InvalidArgumentException('Ungültige Queue-Auswahl.');
+        return $this->queueControl->change($input['queue'], $input['extension'], $input['enabled']);
     }
     public function transfer(array $input): PromiseInterface { return $this->transfers->start($input); }
     public function transferControl(string $id, string $action, array $input): PromiseInterface { return $this->transfers->control($id,$action,$input); }

@@ -1,0 +1,105 @@
+diff --git a/kienzlefon/queue_dispatch.py b/kienzlefon/queue_dispatch.py
+--- a/kienzlefon/queue_dispatch.py
++++ b/kienzlefon/queue_dispatch.py
+@@ -29,7 +29,7 @@
+ 
+ def ring_seconds(*, now: float, caller: WaitingCall, head: WaitingCall,
+                  ring: int, retry: int) -> int:
+-    """Initial parallel offers share the head's deadline; later offers serialize.
++    """Only the queue head receives offers; younger callers never overtake.
+ 
+     Round down to full seconds so an offer cannot overrun the common deadline.
+     The retry interval leaves time for SIP CANCEL/device-state propagation before
+@@ -42,8 +42,8 @@
+         return 0
+     cycle = ring + retry
+     age = now - head.entered
+-    if caller.channel != head.channel and age >= ring:
+-        return 0
++    if caller.channel != head.channel:
++        return 0
+     # Every member, including the head itself, observes the same cycle boundary.
+     remaining = ring - (age % cycle)
+     return max(0, min(ring, math.floor(remaining)))
+diff --git a/kienzlefon/middleware.py b/kienzlefon/middleware.py
+--- a/kienzlefon/middleware.py
++++ b/kienzlefon/middleware.py
+@@ -362,7 +362,7 @@
+         f"[{options.username}]\nsecret={secret}\n"
+         "deny=0.0.0.0/0\ndeny=::/0\n"
+         f"permit={acl}\nread=system,call,agent,user,dialplan\n"
+-        "write=call,originate,reporting\n"
++        "write=call,originate,reporting,agent\n"
+     )
+     include = f'#include "{managed}"'
+     # Remove only our exact include forms, then add exactly one absolute include.
+diff --git a/kienzlefon/config.py b/kienzlefon/config.py
+--- a/kienzlefon/config.py
++++ b/kienzlefon/config.py
+@@ -158,7 +158,8 @@
+     red_extension: str
+     red_ring_seconds: int
+     red_fallback_priority: int
+-    specialist_announcement: bool
++    specialist_announcement: bool
++    specialist_always_available: bool
+ 
+ 
+ @dataclass(frozen=True)
+@@ -429,7 +430,7 @@
+ 
+     def specialist_is_available(self, value: datetime | None = None) -> bool:
+         current = _localize(value or self.now(), self.practice.timezone)
+-        return self.specialist_hours.is_active(current)
++        return self.ivr.specialist_always_available or self.specialist_hours.is_active(current)
+ 
+     def prompt_mode(self, name: str) -> str:
+         return self.prompt_modes.get(name, DEFAULT_PROMPT_MODES.get(name, "immer"))
+@@ -901,7 +902,8 @@
+             red_extension=str(_required(ivr, "rote_nebenstelle", "ivr")),
+             red_ring_seconds=int(ivr.get("rotes_telefon_klingeldauer_sekunden", 20)),
+             red_fallback_priority=int(ivr.get("rotes_telefon_queue_prioritaet", 100)),
+-            specialist_announcement=bool(ivr.get("fachstellen_ansage", False)),
++            specialist_announcement=bool(ivr.get("fachstellen_ansage", False)),
++            specialist_always_available=bool(ivr.get("fachstellen_immer_erreichbar", False)),
+         ),
+         recording=RecordingConfig(
+             format=str(recording.get("format", "wav")),
+diff --git a/config/kienzlefon.toml.example b/config/kienzlefon.toml.example
+--- a/config/kienzlefon.toml.example
++++ b/config/kienzlefon.toml.example
+@@ -55,7 +55,8 @@
+ rote_nebenstelle = "299"
+ rotes_telefon_klingeldauer_sekunden = 20
+ rotes_telefon_queue_prioritaet = 100
+-fachstellen_ansage = false
++fachstellen_ansage = false
++fachstellen_immer_erreichbar = false
+ 
+ [aufnahme]
+ format = "wav"
+diff --git a/tests/test_queue_dispatch.py b/tests/test_queue_dispatch.py
+--- a/tests/test_queue_dispatch.py
++++ b/tests/test_queue_dispatch.py
+@@ -26,14 +26,13 @@
+     return replace(app_config, asterisk=replace(app_config.asterisk, queue_extension_count=3))
+ 
+ 
+-def test_two_arrivals_release_second_phone_before_oldest_second_cycle():
+-    first = WaitingCall("PJSIP/provider-a", 100)
+-    second = WaitingCall("PJSIP/provider-b", 102)
+-    first_timeout = ring_seconds(now=100.2, caller=first, head=first, ring=19, retry=1)
+-    second_timeout = ring_seconds(now=102.2, caller=second, head=first, ring=19, retry=1)
+-    assert first_timeout > 0 and second_timeout > 0
+-    assert 100.2 + first_timeout < 119
+-    assert 102.2 + second_timeout < 119
++def test_new_calls_wait_for_head_even_if_another_member_is_free():
++    first = WaitingCall("PJSIP/provider-a", 100)
++    second = WaitingCall("PJSIP/provider-b", 102)
++    first_timeout = ring_seconds(now=100.2, caller=first, head=first, ring=19, retry=1)
++    second_timeout = ring_seconds(now=102.2, caller=second, head=first, ring=19, retry=1)
++    assert first_timeout > 0 and second_timeout == 0
++    assert 100.2 + first_timeout < 119
+     assert ring_seconds(now=119.2, caller=first, head=first, ring=19, retry=1) == 0
+     assert ring_seconds(now=120.2, caller=first, head=first, ring=19, retry=1) > 0
+     assert ring_seconds(now=120.2, caller=second, head=first, ring=19, retry=1) == 0

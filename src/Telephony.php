@@ -95,6 +95,18 @@ final class Telephony
             if ($q && $interface) $this->members[$q][$interface] = array_replace($this->members[$q][$interface] ?? [], $e);
         } elseif ($type === 'QueueMemberRemoved') unset($this->members[$e['Queue'] ?? ''][$e['Interface'] ?? '']);
     }
+    /** Actual Asterisk queue state, independently for each queue (not combined Paused). */
+    public function queueMemberStates(string $queue): array
+    {
+        $result = [];
+        foreach ($this->members[$queue] ?? [] as $interface => $member) {
+            $extension = $this->extension($interface);
+            if ($extension === '') continue;
+            $result[$extension] = !in_array(strtolower((string)($member['Paused'] ?? '0')), ['1', 'true', 'yes'], true);
+        }
+        return $result;
+    }
+    public function queuePresent(string $queue): bool { return $this->ready() && isset($this->queueNames[$queue]); }
     public function channelExists(string $id, string $channel): bool { return ($this->channels[$id]['Channel'] ?? '') === $channel; }
     public function channel(string $id): ?array { return $this->stale ? null : ($this->channels[$id] ?? null); }
     public function ready(): bool { return $this->online && !$this->stale; }
