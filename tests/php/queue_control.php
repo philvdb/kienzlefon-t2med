@@ -109,7 +109,7 @@ test('Sieben lokale Nebenstellen: Sprechzimmer dynamisch zur Praxisqueue hinzusc
     $cfg = [
         'enabled'=>true, 'state_file'=>$stateFile,
         'default_practice'=>['201','202','203','204'],
-        'default_special'=>array_keys($t['extensions']),
+        'default_special'=>array_map('strval', array_keys($t['extensions'])),
     ];
     $commands = [];
     $action = function (string $name, array $fields) use (&$commands) {
