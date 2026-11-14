@@ -1,6 +1,6 @@
 # Dynamische Queue-Steuerung – Integrationshinweise
 
-## Zielbelegung (MFA 201–204 bereits produktiv; Sprechzimmer 301–303 noch einzurichten)
+## Zielbelegung (alle sieben Nebenstellen bereits produktiv registriert und intern getestet)
 
 | SIP | Arbeitsplatz | Praxisqueue | Sonderqueue |
 | --- | --- | --- | --- |
@@ -13,7 +13,7 @@
 | 302 | Sprechzimmer 2, Snom direkt | aus | an |
 | 303 | Sprechzimmer 3, Snom direkt | aus | an |
 
-Die 202 wurde bereits auf den neuen Snom D715 in Zimmer 6 umgezogen. 201–204 sind registriert und direkt erreichbar. Die T2med-Client-/GDT-Zuordnung ist vor Produktivsetzung gesondert zu überprüfen.
+Die 202 wurde auf den neuen Snom D715 in Zimmer 6 umgezogen. Alle sieben Nebenstellen sind registriert und interne Testanrufe funktionieren. Die T2med-Client-/GDT-Zuordnung ist vor Produktivsetzung gesondert zu überprüfen.
 
 ## Voraussetzungen
 
@@ -45,7 +45,7 @@ default_special = ["201", "202", "203", "204", "301", "302", "303"]
 
 ## Abnahme vor Produktivbetrieb
 
-1. MFA-Nebenstellen 201–204 sind bereits registriert und getestet. Sprechzimmer 301 über FRITZ!Box und 302/303 direkt an Asterisk registrieren und alle internen Richtungen testen.
+1. MFA-Nebenstellen 201–204 und Sprechzimmer 301–303 sind registriert und intern getestet. **Offen:** Die produktive Rufstaffelung zeigt ein auffälliges Klingeln von 204 bereits in der zweiten Stufe; vor Aktivierung der Queue-Schalter anhand eines Testanrufs die tatsächlichen Asterisk-Dialversuche und Regeln prüfen.
 2. Vier Wartende und nur 201 aktiv: 202 und 203 während der Warteschlange zuschalten. Der älteste Anrufer muss als erster angenommen werden; der nächste erst danach.
 3. Schalter Normal und IVR 9 unabhängig testen; bei laufenden Gesprächen pausieren und wieder aktivieren.
 4. Zwei Browser versuchen, die jeweils letzte aktive Nebenstelle auszuschalten: Der Server muss mindestens eine aktiv lassen.
