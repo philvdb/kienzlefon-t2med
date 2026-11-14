@@ -82,7 +82,7 @@ final class QueueControl
         }
         if (!$enabled) return null;
         // Kienzlefon's normal progressive rule exposes penalties 0..3.
-        // Extension 300 is an optional fourth-stage participant in practice.
+        // Additional consultation-room endpoints are optional fourth-stage participants in practice.
         $index = array_search($extension, array_map('strval', array_keys($this->extensions)), true);
         return ['QueueAdd', [
             'Queue' => $queue, 'Interface' => $this->interface($extension),
