@@ -126,10 +126,12 @@ Bei Problemen `enabled = false` in `[queue_control]` setzen, den Dienst neu star
 - **Checkbox IVR 9 für 303 ausgeschaltet:** `asterisk -rx 'queue show kienzlefon-sonder'` bestätigt `Telefon 303 ... (paused was 15 secs ago)`; die übrigen sechs Mitglieder sind weiterhin `Not in use` und nicht pausiert. Die Live-AMI-Ansteuerung funktioniert.
 - Fonial wieder erreichbar; korrigierte progressive Rufstaffelung 201 → 202 → 203 → 204 wurde bei einem externen Testanruf bestätigt.
 - **Vom Betreiber als erfolgreich bestätigt:** Middleware-Neustart mit gespeichertem Zustand, unabhängiges Ausschalten der 202 in der Praxisqueue und dynamisches Hinzufügen/Deaktivieren von 301 in der Praxisqueue. Die initiale Deaktivierung von 303 in der Sonderqueue war bereits im Asterisk-Status nachgewiesen.
-- **Noch offen:** Wiederherstellung nach tatsächlichem Asterisk-Neustart/Queue-Verlust, Verhalten bei deaktivierter 201, Parallelanrufe/FIFO und der gesonderte 24/7-IVR-Test.
+- **Erfolgreich vom Betreiber bestätigt:** auch vollständiger Asterisk-Neustart einschließlich Rückkehr der gewünschten Queue-Mitgliedschaften/Pausierungen.
+- **Entscheidung vom 15.11.2026:** Backoffice 201 soll im Praxisbetrieb dauerhaft zugeschaltet bleiben. **Keine dynamische Verdichtung/Neuvergabe der Ruf-Penalties** für eine absichtliche Abschaltung der 201; eine hierbei entstehende Verzögerung um bis zu eine Rufstufe wird akzeptiert. Eine optionale, einfache UI-/API-Sperre für das Abschalten von 201 ist noch nicht implementiert.
+- **Noch offen:** Parallelanrufe/FIFO, gesonderter 24/7-IVR-Test und gegebenenfalls UI-/API-Sperre für 201.
 - Kein erneuter Kienzlefon-Generatorlauf bis zur dauerhaften Integration der manuell getesteten `QUEUE_MAX_PENALTY`-Änderung.
 
-### Kontrollierter Asterisk-Neustart nach Checkbox-Test (geschlossener Praxisbetrieb)
+### Kontrollierter Asterisk-Neustart nach Checkbox-Test (geschlossener Praxisbetrieb; bereits erfolgreich durchgeführt)
 
 Die bisherige Middleware-Neustartprüfung beweist noch nicht, dass ein **verlorener Asterisk-Queue-Zustand** wiederhergestellt wird. Dafür im wartungsfreien Zustand zwei unterschiedliche Marker setzen: die bereits statische 303 in `kienzlefon-sonder` pausieren sowie 301 dynamisch in `praxis` aktivieren. Dann sicherstellen, dass keine Gespräche bestehen:
 
