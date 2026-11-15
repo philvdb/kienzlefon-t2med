@@ -19,8 +19,8 @@ Die 202 wurde auf den neuen Snom D715 in Zimmer 6 umgezogen. Alle sieben Nebenst
 
 1. Kienzlefax Queue-only: KFX_PHONE_COUNT=4 mit 201–204 (201/202-Passwörter erhalten). In Kienzlefon [asterisk].queue_nebenstellen_anzahl=4 setzen.
 2. Rottelefon bleibt deaktiviert, Reservierung [ivr].rote_nebenstelle="300". Unter [zusaetzliche_nebenstellen] die SIP-Nebenstellen ["301","302","303"] mit individuellen Passwörtern anlegen und unter [sonderqueue].zusaetzliche_nebenstellen=["301","302","303"] aufnehmen.
-3. Kernpatch patches/kienzlefon-dynamic-queue.patch auf den passenden Kienzlefon-Quellstand anwenden. Er erzwingt FIFO, erlaubt AMI-Agent-Schreibzugriff und schaltet mit [ivr].fachstellen_immer_erreichbar=true die IVR 9 rund um die Uhr frei.
-4. Kienzlefon-AMI-Benutzer braucht write=agent zusätzlich zu seinen bisherigen Rechten für QueuePause und QueueAdd. Mit Kernpatch im Generator enthalten; AMI danach kontrolliert neu laden.
+3. Der Kernpatch `patches/kienzlefon-dynamic-queue.patch` ergänzt die dauerhafte, generatorfeste Progressive-Penalty-Korrektur, FIFO, AMI-Agent-Rechte und eine optionale IVR-9-Erreichbarkeit außerhalb der Sprechzeit. **Die Checkout-/Patch-Installation des Kienzlefon-Kerns ist getrennt von der Middleware-Installation; den Patch nicht ungetestet direkt auf der produktiven VM anwenden.**
+4. Der vorhandene Kienzlefon-AMI-Benutzer benötigt zusätzlich `write=agent` für `QueuePause` und `QueueAdd`. Bis der Kernpatch eingebaut ist, das bestehende generierte `/etc/asterisk/manager_kienzlefon_middleware.conf` **gezielt manuell** ergänzen und `manager reload` ausführen. Bei späterer Neugenerierung kann die manuelle Änderung verloren gehen.
 5. In der T2med-Konfiguration [telephony.extensions] in Reihenfolge 201,202,203,204,301,302,303 festlegen, nicht 300; queues=["praxis","kienzlefon-sonder"] einstellen. Clients/GDT auf tatsächliche Zuordnung prüfen.
 
 In /etc/kienzlefon-t2med/config.toml ergänzen (bestehende Einstellungen erhalten):
@@ -42,6 +42,82 @@ default_special = ["201", "202", "203", "204", "301", "302", "303"]
 - Mit FIFO-Kernpatch bekommt nur der jeweilige Queue-Kopf Rufangebote, bis er angenommen wurde oder die Queue verlässt. Danach folgt der nächste Anrufer.
 - Bestätigte Änderungen werden in queue-selection.json gespeichert und nach Queue-Reload und AMI-Neuverbindung wiederhergestellt. Bei fehlender Datei werden die Standardwerte benutzt.
 - Bedienung ohne MFA-Login, aber vorhandene Intranet-/Origin-/Token-Prüfung bleibt. Die letzte aktivierte Nebenstelle kann serverseitig nicht deaktiviert werden.
+
+
+## Getrennte Erprobung ohne Fonial (15.11.2026)
+
+Die Providerstörung betrifft externe Gespräche. Die AMI-Steuerung kann mit vorhandenen registrierten internen SIP-Telefonen separat erprobt werden. Die bereits manuell gesetzten `QUEUE_MAX_PENALTY`-Regeln bleiben zunächst bestehen; den Kienzlefon-Installer beziehungsweise `kienzlefon-asterisk` dabei **nicht erneut ausführen**, sonst werden die manuellen Regeln überschrieben.
+
+### Middleware aus dem Feature-Branch installieren
+
+Vor dem Upgrade sicherstellen, dass im produktiven `/opt/kienzlefon-t2med` keine unübernommenen lokalen Hotfixes liegen, da der Installer diese Anwendung neu aufspielt. Sicherung und Check:
+
+~~~bash
+sudo tar -czf "/root/kienzlefon-t2med-vor-queue-$(date +%Y%m%d-%H%M%S).tgz" \
+  /opt/kienzlefon-t2med /etc/kienzlefon-t2med
+git clone --single-branch --branch feature/dynamic-queue-participation \
+  https://github.com/philvdb/kienzlefon-t2med.git /root/kienzlefon-t2med-queue
+cd /root/kienzlefon-t2med-queue
+sudo bash installer/install.sh --dry-run
+sudo bash installer/install.sh --keep-config --skip-samba
+~~~
+
+**Achtung:** Der Installer beendet/ersetzt/startet den Middleware-Dienst; der Funktionsumfang lokaler unversionierter Anpassungen muss vorab gegen den Branch geprüft sein. `--skip-samba` lässt die vorhandene GDT-Freigabe unverändert.
+
+In `/etc/kienzlefon-t2med/config.toml` den vorhandenen `[telephony]`-Schlüssel `queues = ["praxis", "kienzlefon-sonder"]` prüfen/setzen und **im bestehenden** `[telephony.extensions]` die folgenden sieben Schlüssel konsistent verwenden (nicht zusätzlich einen zweiten TOML-Abschnitt anlegen):
+
+~~~toml
+[telephony.extensions]
+"201" = "Backoffice"
+"202" = "Zimmer 6"
+"203" = "Tresen rechts"
+"204" = "Tresen links"
+"301" = "Sprechzimmer 1"
+"302" = "Sprechzimmer 2"
+"303" = "Sprechzimmer 3"
+
+[queue_control]
+enabled = true
+state_file = "/var/lib/kienzlefon-t2med/queue-selection.json"
+default_practice = ["201", "202", "203", "204"]
+default_special = ["201", "202", "203", "204", "301", "302", "303"]
+~~~
+
+Vorhandene `[clients.*]`-, GDT-, FHIR-/APS-, Telefonie- und HTTP-Einstellungen unverändert lassen. `[queue_control]` darf nur einmal existieren.
+
+AMI-Recht kontrollieren:
+
+~~~bash
+grep -n '^write=' /etc/asterisk/manager_kienzlefon_middleware.conf
+~~~
+
+Ist dort **exakt** `write=call,originate,reporting` gesetzt, diese Zeile nach Dateisicherung auf `write=call,originate,reporting,agent` erweitern. Andere Werte vor Änderung prüfen, nicht überschreiben. Dann:
+
+~~~bash
+asterisk -rx 'manager reload'
+sudo -u kienzlefon-t2med php /opt/kienzlefon-t2med/bin/server.php \
+  --config=/etc/kienzlefon-t2med/config.toml --check-config
+systemctl restart kienzlefon-t2med.service
+systemctl is-active kienzlefon-t2med.service
+asterisk -rx 'queue show praxis'
+asterisk -rx 'queue show kienzlefon-sonder'
+~~~
+
+### Interner Test (ohne eingehenden Provideranruf)
+
+Im lokalen Browser `http://192.168.100.105:8766/` öffnen, bei den Nebenstellen die zwei Schalter **Normal** und **IVR 9** prüfen:
+
+1. `202` nur in **Normal** ausschalten: nur der Eintrag in `queue show praxis` muss `paused` anzeigen; die Sonderqueue bleibt unverändert.
+2. `303` nur in **IVR 9** ausschalten: nur `queue show kienzlefon-sonder` zeigt `paused`.
+3. `301` in **Normal** einschalten: dynamischer `Local/301@kienzlefon-queue-member`-Eintrag mit Penalty 3 erscheint. Ausschalten sollte ihn pausieren.
+4. Middleware-Dienst neu starten und prüfen, dass die Schalter aus `/var/lib/kienzlefon-t2med/queue-selection.json` wiederhergestellt werden. Danach `module reload app_queue.so` testen, damit auch Wiederherstellung nach Queue-Reload geprüft wird.
+5. Vor dem Ende des Tests die gewünschten Standardzustände wiederherstellen und die letzte aktive Nebenstelle testweise auszuschalten versuchen; das muss abgelehnt werden.
+
+**Noch offener Abnahmepunkt:** Die neue Max-Penalty-Grenze verzögert bei deaktivierter 201 derzeit die erste verfügbare höhere Stufe möglicherweise um 20 Sekunden. Die dynamische Staffelung muss später so ergänzt werden, dass die erste tatsächlich aktive Nebenstelle sofort klingelt. Bis dahin die 201 für den regulären Betrieb aktiviert lassen. Die externe Rufreihenfolge bleibt bis zur Wiederherstellung Fonials ungetestet.
+
+### Rückweg
+
+Bei Problemen `enabled = false` in `[queue_control]` setzen, den Dienst neu starten und die benötigten Mitglieder manuell mit `queue unpause member ... queue <name>` aktivieren. Die Checkboxen werden dann ausgeblendet. Bei Fehlern nach einem Installer-Upgrade die vorab angelegte Sicherung der Middleware-/Config-Dateien zur Wiederherstellung verwenden.
 
 ## Abnahme vor Produktivbetrieb
 
