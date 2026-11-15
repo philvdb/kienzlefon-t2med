@@ -2,6 +2,7 @@
 declare(strict_types=1);
 
 use Kienzlefon\QueueControl;
+use Kienzlefon\Telephony;
 
 test('Queue-Zustand wird pro Warteschlange getrennt aus AMI ermittelt', function () {
     $t = config()['telephony'];
