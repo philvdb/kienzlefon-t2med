@@ -33,6 +33,74 @@ default_practice = ["201", "202", "203", "204"]
 default_special = ["201", "202", "203", "204", "301", "302", "303"]
 ~~~
 
+## Arbeitsplatz-Auswahl für Click-to-Call (15.11.2026)
+
+Die Arbeitsplatz-Auswahl kommt aus `[clients.<id>]` in `/etc/kienzlefon-t2med/config.toml`, nicht aus den Queue-Checkboxen. Die IDs werden für ausgehende Gespräche, Tel-/Callto-Launcher und GDT verwendet. Bereits vorhandene Client-IDs `backoffice`, `tresen-rechts` und `tresen-links` unverändert beibehalten. Die Zuordnung in `[telephony.extensions]` muss dieselben sieben Nummern enthalten.
+
+**Festgelegte Plätze:**
+
+| Client-ID | Anzeigename | SIP-Nebenstelle | GDT-Ordner (Vorschlag, bei vorhandenen Plätzen Bestand erhalten) |
+| --- | --- | --- | --- |
+| `backoffice` | Backoffice | `201` | `backoffice` |
+| `zimmer6` | Zimmer 6 | `202` | `zimmer6` |
+| `tresen-rechts` | Tresen rechts | `203` | `tresen-rechts` |
+| `tresen-links` | Tresen links | `204` | `tresen-links` |
+| `sprechzimmer1` | Sprechzimmer 1 | `301` | `sprechzimmer1` |
+| `sprechzimmer2` | Sprechzimmer 2 | `302` | `sprechzimmer2` |
+| `sprechzimmer3` | Sprechzimmer 3 | `303` | `sprechzimmer3` |
+
+**Client-TOML:**
+
+~~~toml
+[clients.backoffice]
+label = "Backoffice"
+extension = "201"
+directory = "backoffice"
+
+[clients.zimmer6]
+label = "Zimmer 6"
+extension = "202"
+directory = "zimmer6"
+
+[clients.tresen-rechts]
+label = "Tresen rechts"
+extension = "203"
+directory = "tresen-rechts"
+
+[clients.tresen-links]
+label = "Tresen links"
+extension = "204"
+directory = "tresen-links"
+
+[clients.sprechzimmer1]
+label = "Sprechzimmer 1"
+extension = "301"
+directory = "sprechzimmer1"
+
+[clients.sprechzimmer2]
+label = "Sprechzimmer 2"
+extension = "302"
+directory = "sprechzimmer2"
+
+[clients.sprechzimmer3]
+label = "Sprechzimmer 3"
+extension = "303"
+directory = "sprechzimmer3"
+~~~
+
+Die bisherigen `[clients.*]`-Abschnitte **ersetzen** (nicht zusätzlich dieselben Namen nochmals definieren). Für bestehende GDT-Verzeichnisse den tatsächlichen Wert von `directory` beibehalten und gegebenenfalls die bestehende T2med-Gerätezuordnung nicht verändern. Neue GDT-Verzeichnisse im konfigurierten `[gdt].root` anlegen und dem Dienstbenutzer `kienzlefon-t2med` schreibbar bereitstellen. Diese Verzeichnisse müssen auch dann existieren, wenn eine neue Nebenstelle zunächst nur für Click-to-Call und noch nicht für den Aktenaufruf vorgesehen ist.
+
+Nach Bearbeitung:
+
+~~~bash
+sudo -u kienzlefon-t2med php /opt/kienzlefon-t2med/bin/server.php \
+  --config=/etc/kienzlefon-t2med/config.toml --check-config
+systemctl restart kienzlefon-t2med.service
+curl -fsS http://127.0.0.1:8766/api/v1/bootstrap | jq '.clients'
+~~~
+
+**Achtung:** Die Bootstrap-Antwort enthält außerdem ein Sitzungstoken. Zur Kontrolle nur `.clients` ausgeben, nicht die ungekürzte JSON-Antwort weitergeben. Die Browser-Auswahl merkt sich den zuletzt gewählten Arbeitsplatz lokal. Bereits installierte `tel:`-/`callto:`-Desktop-Launcher müssen bei einer geänderten Client-ID/Telefonnummer mit den neuen Parametern neu eingerichtet werden; sonst kann die absichernde `expected_extension`-Prüfung eine alte Registrierung ablehnen. Die SIP-Endgeräte selbst werden durch diese Client-Konfiguration nicht verändert.
+
 ## Verhalten
 
 - QueuePause schaltet ein Mitglied pro Queue ohne Gesprächsabbruch und ohne Reload.
