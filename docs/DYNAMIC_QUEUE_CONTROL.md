@@ -44,9 +44,9 @@ default_special = ["201", "202", "203", "204", "301", "302", "303"]
 - Bedienung ohne MFA-Login, aber vorhandene Intranet-/Origin-/Token-Prüfung bleibt. Die letzte aktivierte Nebenstelle kann serverseitig nicht deaktiviert werden.
 
 
-## Getrennte Erprobung ohne Fonial (15.11.2026)
+## Erprobung der Queue-Steuerung (15.11.2026)
 
-Die Providerstörung betrifft externe Gespräche. Die AMI-Steuerung kann mit vorhandenen registrierten internen SIP-Telefonen separat erprobt werden. Die bereits manuell gesetzten `QUEUE_MAX_PENALTY`-Regeln bleiben zunächst bestehen; den Kienzlefon-Installer beziehungsweise `kienzlefon-asterisk` dabei **nicht erneut ausführen**, sonst werden die manuellen Regeln überschrieben.
+Fonial funktioniert wieder. Ein externer Testanruf bestätigte mit dem manuellen `QUEUE_MAX_PENALTY`-Fix die korrekte Rufstaffelung 201, 202, 203, 204. Die AMI-Steuerung kann unabhängig davon an den internen SIP-Telefonen erprobt werden. Die bereits manuell gesetzten `QUEUE_MAX_PENALTY`-Regeln bleiben zunächst bestehen; den Kienzlefon-Installer beziehungsweise `kienzlefon-asterisk` dabei **nicht erneut ausführen**, sonst werden die manuellen Regeln überschrieben.
 
 ### Middleware aus dem Feature-Branch installieren
 
@@ -113,7 +113,7 @@ Im lokalen Browser `http://192.168.100.105:8766/` öffnen, bei den Nebenstellen 
 4. Middleware-Dienst neu starten und prüfen, dass die Schalter aus `/var/lib/kienzlefon-t2med/queue-selection.json` wiederhergestellt werden. Danach `module reload app_queue.so` testen, damit auch Wiederherstellung nach Queue-Reload geprüft wird.
 5. Vor dem Ende des Tests die gewünschten Standardzustände wiederherstellen und die letzte aktive Nebenstelle testweise auszuschalten versuchen; das muss abgelehnt werden.
 
-**Noch offener Abnahmepunkt:** Die neue Max-Penalty-Grenze verzögert bei deaktivierter 201 derzeit die erste verfügbare höhere Stufe möglicherweise um 20 Sekunden. Die dynamische Staffelung muss später so ergänzt werden, dass die erste tatsächlich aktive Nebenstelle sofort klingelt. Bis dahin die 201 für den regulären Betrieb aktiviert lassen. Die externe Rufreihenfolge bleibt bis zur Wiederherstellung Fonials ungetestet.
+**Noch offener Abnahmepunkt:** Die neue Max-Penalty-Grenze verzögert bei deaktivierter 201 derzeit die erste verfügbare höhere Stufe möglicherweise um 20 Sekunden. Die dynamische Staffelung muss später so ergänzt werden, dass die erste tatsächlich aktive Nebenstelle sofort klingelt. Bis dahin die 201 für den regulären Betrieb aktiviert lassen. Die externe Rufreihenfolge wurde mit dem manuellen Fix erfolgreich getestet; nach Installation des Kienzlefon-Kernpatches oder jeder Neugenerierung erneut prüfen.
 
 ### Rückweg
 
@@ -121,7 +121,7 @@ Bei Problemen `enabled = false` in `[queue_control]` setzen, den Dienst neu star
 
 ## Abnahme vor Produktivbetrieb
 
-1. MFA-Nebenstellen 201–204 und Sprechzimmer 301–303 sind registriert und intern getestet. **Offen:** Die produktive Rufstaffelung zeigt ein auffälliges Klingeln von 204 bereits in der zweiten Stufe; vor Aktivierung der Queue-Schalter anhand eines Testanrufs die tatsächlichen Asterisk-Dialversuche und Regeln prüfen.
+1. MFA-Nebenstellen 201–204 und Sprechzimmer 301–303 sind registriert und intern getestet. Die ursprüngliche falsche Reihenfolge wurde mit dem **manuellen** `QUEUE_MAX_PENALTY`-Fix bei einem externen Testanruf erfolgreich korrigiert. Nach Übernahme des dauerhaften Kernpatches erneut prüfen.
 2. Vier Wartende und nur 201 aktiv: 202 und 203 während der Warteschlange zuschalten. Der älteste Anrufer muss als erster angenommen werden; der nächste erst danach.
 3. Schalter Normal und IVR 9 unabhängig testen; bei laufenden Gesprächen pausieren und wieder aktivieren.
 4. Zwei Browser versuchen, die jeweils letzte aktive Nebenstelle auszuschalten: Der Server muss mindestens eine aktiv lassen.
