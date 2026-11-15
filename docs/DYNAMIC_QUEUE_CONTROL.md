@@ -125,8 +125,34 @@ Bei Problemen `enabled = false` in `[queue_control]` setzen, den Dienst neu star
 - `--check-config` ergibt `Konfiguration gültig.`, `kienzlefon-t2med.service` läuft nach Neustart.
 - **Checkbox IVR 9 für 303 ausgeschaltet:** `asterisk -rx 'queue show kienzlefon-sonder'` bestätigt `Telefon 303 ... (paused was 15 secs ago)`; die übrigen sechs Mitglieder sind weiterhin `Not in use` und nicht pausiert. Die Live-AMI-Ansteuerung funktioniert.
 - Fonial wieder erreichbar; korrigierte progressive Rufstaffelung 201 → 202 → 203 → 204 wurde bei einem externen Testanruf bestätigt.
-- **Noch nicht bestätigt:** Persistenz und Wiederherstellung nach Middleware-/Asterisk-Queue-Neustart, unabhängiges Ausschalten von 202 nur in der Praxisqueue, dynamisches Hinzufügen von 301 zur Praxisqueue, Verhalten bei deaktivierter 201, Parallelanrufe/FIFO.
+- **Vom Betreiber als erfolgreich bestätigt:** Middleware-Neustart mit gespeichertem Zustand, unabhängiges Ausschalten der 202 in der Praxisqueue und dynamisches Hinzufügen/Deaktivieren von 301 in der Praxisqueue. Die initiale Deaktivierung von 303 in der Sonderqueue war bereits im Asterisk-Status nachgewiesen.
+- **Noch offen:** Wiederherstellung nach tatsächlichem Asterisk-Neustart/Queue-Verlust, Verhalten bei deaktivierter 201, Parallelanrufe/FIFO und der gesonderte 24/7-IVR-Test.
 - Kein erneuter Kienzlefon-Generatorlauf bis zur dauerhaften Integration der manuell getesteten `QUEUE_MAX_PENALTY`-Änderung.
+
+### Kontrollierter Asterisk-Neustart nach Checkbox-Test (geschlossener Praxisbetrieb)
+
+Die bisherige Middleware-Neustartprüfung beweist noch nicht, dass ein **verlorener Asterisk-Queue-Zustand** wiederhergestellt wird. Dafür im wartungsfreien Zustand zwei unterschiedliche Marker setzen: die bereits statische 303 in `kienzlefon-sonder` pausieren sowie 301 dynamisch in `praxis` aktivieren. Dann sicherstellen, dass keine Gespräche bestehen:
+
+~~~bash
+asterisk -rx 'core show channels count'
+asterisk -rx 'queue show praxis'
+asterisk -rx 'queue show kienzlefon-sonder'
+~~~
+
+**Nur wenn keine aktiven Gespräche vorhanden sind und der Testabbruch akzeptabel ist:** `systemctl restart asterisk` (nicht bloß `module reload app_queue.so`) führt zu einem echten Neustart der Queue-In-Memory-Daten. Die externen SIP-Trunks sind währenddessen kurz unterbrochen; nach Neustart Registrierungen prüfen. Die T2med-Middleware verbindet sich per AMI neu und führt nach dem Snapshot `QueueControl::restore()` aus. Bis dahin können 301 und 303 kurz ihren gewünschten Zustand verlieren.
+
+~~~bash
+systemctl restart asterisk
+systemctl is-active asterisk
+asterisk -rx 'pjsip show endpoints'
+asterisk -rx 'queue show praxis'
+asterisk -rx 'queue show kienzlefon-sonder'
+journalctl -u kienzlefon-t2med.service -n 30 --no-pager
+~~~
+
+**Erwartung nach AMI-Wiederverbindung:** 301 ist in der Praxisqueue dynamisch ergänzt und 303 in `kienzlefon-sonder` pausiert. Wenn nicht, den T2med-Dienst einmal neu starten, danach erneut prüfen und den selbständigen Wiederanlauf als Defekt festhalten. Es reicht **nicht**, dass die Checkboxen im Browser den gespeicherten Wunschzustand anzeigen; der tatsächliche Asterisk-Status muss dazu passen.
+
+Anschließend 301 in `praxis` und 303 in der Sonderqueue zurück auf die normale Anfangsbelegung setzen. Keine Konfiguration mit `kienzlefon-asterisk` neu generieren, bis der Kernpatch eingebaut ist; sonst verschwindet der manuelle Max-Penalty-Fix.
 
 ## Abnahme vor Produktivbetrieb
 
