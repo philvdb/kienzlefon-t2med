@@ -119,6 +119,15 @@ Im lokalen Browser `http://192.168.100.105:8766/` öffnen, bei den Nebenstellen 
 
 Bei Problemen `enabled = false` in `[queue_control]` setzen, den Dienst neu starten und die benötigten Mitglieder manuell mit `queue unpause member ... queue <name>` aktivieren. Die Checkboxen werden dann ausgeblendet. Bei Fehlern nach einem Installer-Upgrade die vorab angelegte Sicherung der Middleware-/Config-Dateien zur Wiederherstellung verwenden.
 
+## Erster produktiver AMI-Funktionstest (15.11.2026, 01:23 CET)
+
+- Benutzerseitig bestätigt: `php tests/php/run.php` nach Korrektur des fehlenden `Telephony`-Imports ohne Fehler; Feature-Branch-Middleware erfolgreich installiert.
+- `--check-config` ergibt `Konfiguration gültig.`, `kienzlefon-t2med.service` läuft nach Neustart.
+- **Checkbox IVR 9 für 303 ausgeschaltet:** `asterisk -rx 'queue show kienzlefon-sonder'` bestätigt `Telefon 303 ... (paused was 15 secs ago)`; die übrigen sechs Mitglieder sind weiterhin `Not in use` und nicht pausiert. Die Live-AMI-Ansteuerung funktioniert.
+- Fonial wieder erreichbar; korrigierte progressive Rufstaffelung 201 → 202 → 203 → 204 wurde bei einem externen Testanruf bestätigt.
+- **Noch nicht bestätigt:** Persistenz und Wiederherstellung nach Middleware-/Asterisk-Queue-Neustart, unabhängiges Ausschalten von 202 nur in der Praxisqueue, dynamisches Hinzufügen von 301 zur Praxisqueue, Verhalten bei deaktivierter 201, Parallelanrufe/FIFO.
+- Kein erneuter Kienzlefon-Generatorlauf bis zur dauerhaften Integration der manuell getesteten `QUEUE_MAX_PENALTY`-Änderung.
+
 ## Abnahme vor Produktivbetrieb
 
 1. MFA-Nebenstellen 201–204 und Sprechzimmer 301–303 sind registriert und intern getestet. Die ursprüngliche falsche Reihenfolge wurde mit dem **manuellen** `QUEUE_MAX_PENALTY`-Fix bei einem externen Testanruf erfolgreich korrigiert. Nach Übernahme des dauerhaften Kernpatches erneut prüfen.
