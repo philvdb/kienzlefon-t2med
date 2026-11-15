@@ -10,17 +10,50 @@ diff --git a/kienzlefon/queue_dispatch.py b/kienzlefon/queue_dispatch.py
  
      Round down to full seconds so an offer cannot overrun the common deadline.
      The retry interval leaves time for SIP CANCEL/device-state propagation before
-@@ -42,8 +42,8 @@
+@@ -42,7 +42,7 @@
          return 0
      cycle = ring + retry
      age = now - head.entered
 -    if caller.channel != head.channel and age >= ring:
--        return 0
 +    if caller.channel != head.channel:
-+        return 0
+         return 0
      # Every member, including the head itself, observes the same cycle boundary.
      remaining = ring - (age % cycle)
-     return max(0, min(ring, math.floor(remaining)))
+@@ -85,6 +85,10 @@
+     if not CHANNEL_NAME.fullmatch(name) or not 2 <= ring <= 600 or not 1 <= retry <= 60:
+         raise ValueError("Ungueltige Queue-Parameter")
+     channel.set_variable("QUEUE_RAISE_PENALTY", "0")
++    # RAISE_PENALTY alone lifts low penalties and permits high-penalty members early.
++    # Bound the normal queue to the first rung until the progressive rules advance it.
++    if queue == config.ivr.queue_name:
++        channel.set_variable("QUEUE_MAX_PENALTY", "0")
+     for key, value in {
+         "KF_QUEUE_NAME": queue, "KF_QUEUE_CALLER": name,
+         "KF_QUEUE_ENTERED": f"{time.time():.6f}",
+diff --git a/kienzlefon/queue_dialplan.py b/kienzlefon/queue_dialplan.py
+--- a/kienzlefon/queue_dialplan.py
++++ b/kienzlefon/queue_dialplan.py
+@@ -72,7 +72,7 @@
+     # app_queue's head-caller path applies rules at elapsed > rule_time. Use the
+     # second before the next cycle, otherwise a stage can be a full cycle late.
+     cycle = sum(timing)
+-    rules = "\n".join(f"penaltychange => {index * cycle - 1},,,{index}"
++    rules = "\n".join(f"penaltychange => {index * cycle - 1},{index},,{index}"
+                       for index in range(1, config.asterisk.queue_extension_count))
+     return f"; Kienzlefon Rufzyklen\n[{RULE_NAME}]\n{rules}\n"
+ 
+diff --git a/kienzlefon/queue_setup.py b/kienzlefon/queue_setup.py
+--- a/kienzlefon/queue_setup.py
++++ b/kienzlefon/queue_setup.py
+@@ -77,7 +77,7 @@
+     cycle = sum(practice_timing(Path("/etc/asterisk/queues-kfx.conf"), config.ivr.queue_name))
+     rules = _cli("queue show rules " + RULE_NAME)
+     expected = [f"Rule: {RULE_NAME}"] + [
+-        f"After {index * cycle - 1} seconds, adjust QUEUE_MAX_PENALTY by 0, "
++        f"After {index * cycle - 1} seconds, adjust QUEUE_MAX_PENALTY to {index}, "
+         f"adjust QUEUE_MIN_PENALTY by 0 and adjust QUEUE_RAISE_PENALTY to {index}"
+         for index in range(1, config.asterisk.queue_extension_count)
+     ]
 diff --git a/kienzlefon/middleware.py b/kienzlefon/middleware.py
 --- a/kienzlefon/middleware.py
 +++ b/kienzlefon/middleware.py
@@ -36,12 +69,10 @@ diff --git a/kienzlefon/middleware.py b/kienzlefon/middleware.py
 diff --git a/kienzlefon/config.py b/kienzlefon/config.py
 --- a/kienzlefon/config.py
 +++ b/kienzlefon/config.py
-@@ -158,7 +158,8 @@
-     red_extension: str
+@@ -159,6 +159,7 @@
      red_ring_seconds: int
      red_fallback_priority: int
--    specialist_announcement: bool
-+    specialist_announcement: bool
+     specialist_announcement: bool
 +    specialist_always_available: bool
  
  
@@ -55,12 +86,10 @@ diff --git a/kienzlefon/config.py b/kienzlefon/config.py
  
      def prompt_mode(self, name: str) -> str:
          return self.prompt_modes.get(name, DEFAULT_PROMPT_MODES.get(name, "immer"))
-@@ -901,7 +902,8 @@
-             red_extension=str(_required(ivr, "rote_nebenstelle", "ivr")),
+@@ -902,6 +903,7 @@
              red_ring_seconds=int(ivr.get("rotes_telefon_klingeldauer_sekunden", 20)),
              red_fallback_priority=int(ivr.get("rotes_telefon_queue_prioritaet", 100)),
--            specialist_announcement=bool(ivr.get("fachstellen_ansage", False)),
-+            specialist_announcement=bool(ivr.get("fachstellen_ansage", False)),
+             specialist_announcement=bool(ivr.get("fachstellen_ansage", False)),
 +            specialist_always_available=bool(ivr.get("fachstellen_immer_erreichbar", False)),
          ),
          recording=RecordingConfig(
@@ -68,12 +97,10 @@ diff --git a/kienzlefon/config.py b/kienzlefon/config.py
 diff --git a/config/kienzlefon.toml.example b/config/kienzlefon.toml.example
 --- a/config/kienzlefon.toml.example
 +++ b/config/kienzlefon.toml.example
-@@ -55,7 +55,8 @@
- rote_nebenstelle = "299"
+@@ -56,6 +56,7 @@
  rotes_telefon_klingeldauer_sekunden = 20
  rotes_telefon_queue_prioritaet = 100
--fachstellen_ansage = false
-+fachstellen_ansage = false
+ fachstellen_ansage = false
 +fachstellen_immer_erreichbar = false
  
  [aufnahme]
@@ -86,20 +113,51 @@ diff --git a/tests/test_queue_dispatch.py b/tests/test_queue_dispatch.py
  
  
 -def test_two_arrivals_release_second_phone_before_oldest_second_cycle():
--    first = WaitingCall("PJSIP/provider-a", 100)
--    second = WaitingCall("PJSIP/provider-b", 102)
--    first_timeout = ring_seconds(now=100.2, caller=first, head=first, ring=19, retry=1)
--    second_timeout = ring_seconds(now=102.2, caller=second, head=first, ring=19, retry=1)
--    assert first_timeout > 0 and second_timeout > 0
--    assert 100.2 + first_timeout < 119
--    assert 102.2 + second_timeout < 119
 +def test_new_calls_wait_for_head_even_if_another_member_is_free():
-+    first = WaitingCall("PJSIP/provider-a", 100)
-+    second = WaitingCall("PJSIP/provider-b", 102)
-+    first_timeout = ring_seconds(now=100.2, caller=first, head=first, ring=19, retry=1)
-+    second_timeout = ring_seconds(now=102.2, caller=second, head=first, ring=19, retry=1)
+     first = WaitingCall("PJSIP/provider-a", 100)
+     second = WaitingCall("PJSIP/provider-b", 102)
+     first_timeout = ring_seconds(now=100.2, caller=first, head=first, ring=19, retry=1)
+     second_timeout = ring_seconds(now=102.2, caller=second, head=first, ring=19, retry=1)
+-    assert first_timeout > 0 and second_timeout > 0
 +    assert first_timeout > 0 and second_timeout == 0
-+    assert 100.2 + first_timeout < 119
+     assert 100.2 + first_timeout < 119
+-    assert 102.2 + second_timeout < 119
      assert ring_seconds(now=119.2, caller=first, head=first, ring=19, retry=1) == 0
      assert ring_seconds(now=120.2, caller=first, head=first, ring=19, retry=1) > 0
      assert ring_seconds(now=120.2, caller=second, head=first, ring=19, retry=1) == 0
+@@ -85,7 +84,7 @@
+ 
+ 
+ def test_agi_enter_initializes_inherited_metadata_and_native_penalty(app_config, monkeypatch):
+-    stdin = StringIO("agi_channel: PJSIP/provider-0001\n\n" + "200 result=1\n" * 7)
++    stdin = StringIO("agi_channel: PJSIP/provider-0001\n\n" + "200 result=1\n" * 8)
+     stdout = StringIO()
+     monkeypatch.setattr(dispatch, "AgiChannel", partial(AgiChannel, stdin, stdout))
+     monkeypatch.setattr(dispatch, "load_config", lambda _: app_config)
+@@ -95,6 +94,7 @@
+     assert stdout.getvalue().splitlines() == [
+         'SET VARIABLE KF_QUEUE_RING_SECONDS "0"',
+         'SET VARIABLE QUEUE_RAISE_PENALTY "0"',
++        'SET VARIABLE QUEUE_MAX_PENALTY "0"',
+         'SET VARIABLE __KF_QUEUE_NAME "praxis"',
+         'SET VARIABLE __KF_QUEUE_CALLER "PJSIP/provider-0001"',
+         'SET VARIABLE __KF_QUEUE_ENTERED "100.250000"',
+@@ -184,15 +184,15 @@
+ 
+ def test_rules_take_effect_at_second_and_third_cycle_in_asterisk_head_path(app_config):
+     rules = render_rules(app_config, (19, 1))
+-    assert "penaltychange => 19,,,1" in rules
+-    assert "penaltychange => 39,,,2" in rules
++    assert "penaltychange => 19,1,,1" in rules
++    assert "penaltychange => 39,2,,2" in rules
+     for elapsed, expected in ((0, 0), (19, 0), (20, 1), (39, 1), (40, 2)):
+         active = 0
+         for boundary, penalty in ((19, 1), (39, 2)):
+             if elapsed > boundary:  # app_queue's head path uses strictly >.
+                 active = penalty
+         assert active == expected
+-    assert "penaltychange => 30,,,1" in render_rules(app_config, (29, 2))
++    assert "penaltychange => 30,1,,1" in render_rules(app_config, (29, 2))
+ 
+ 
+ def test_entry_wrappers_preserve_queue_arguments_and_labels(app_config):
