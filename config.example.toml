@@ -66,3 +66,10 @@ max_patients = 200000
 # Explizite Ortsvorwahl für lokale Nummern; leer = keine Ergänzung.
 local_area_code = ""
 cache_seconds = 120
+
+# Dynamische, anmeldungslos bedienbare Queue-Mitgliedschaft (nach Asterisk-Einrichtung aktivieren).
+[queue_control]
+enabled = false
+state_file = "/var/lib/kienzlefon-t2med/queue-selection.json"
+default_practice = ["201"]
+default_special = ["201"]

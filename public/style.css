@@ -121,3 +121,18 @@ button:disabled{cursor:default}
 @media(max-width:720px){.full-footer{gap:15px;line-height:1.5}}
 
 #compact-talks-title{display:flex;justify-content:space-between;gap:6px}.extension-status{font-weight:750}
+
+/* Queue membership: dialing and queue toggles must not share a click target. */
+.extension{display:flex;flex-direction:column;align-items:stretch;gap:0;padding:0}
+.extension-dial{display:flex;align-items:center;gap:12px;text-align:left;background:none;border:0;color:inherit;width:100%;padding:14px 17px;min-height:65px}
+.extension-dial:not(:disabled):hover{background:#eef5ed}
+.extension-dial:disabled{cursor:default;opacity:1}
+.queue-toggles{display:flex;gap:13px;align-items:center;border-top:1px solid var(--line);padding:9px 12px;flex-wrap:wrap}
+.queue-toggle{display:inline-flex;align-items:center;gap:5px;font-size:11px;cursor:pointer;white-space:nowrap;color:#456257}
+.queue-toggle input{accent-color:#215d50;width:16px;height:16px;min-height:0;padding:0;margin:0}
+.queue-toggle input:disabled{cursor:not-allowed}
+.queue-toggle:has(input:disabled){opacity:.55}
+.compact-extension-row{border-bottom:1px solid var(--line);background:#fff}
+.compact-extension-row .compact-extension{border-bottom:0}
+.compact-queue-toggles{padding:4px 9px 7px;border-top:0;gap:13px}
+.compact-view .queue-toggle input{width:14px;height:14px;min-height:0;padding:0;margin:0}

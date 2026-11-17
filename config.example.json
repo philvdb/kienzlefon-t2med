@@ -70,5 +70,15 @@
     "max_patients": 200000,
     "local_area_code": "",
     "cache_seconds": 120
+  },
+  "queue_control": {
+    "enabled": false,
+    "state_file": "/var/lib/kienzlefon-t2med/queue-selection.json",
+    "default_practice": [
+      "201"
+    ],
+    "default_special": [
+      "201"
+    ]
   }
 }

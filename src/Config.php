@@ -66,6 +66,7 @@ final class Config
             foreach (['tls_verify','ca_file'] as $field) if (isset($c['aps'][$field])) $c['fhir'][$field] = $c['aps'][$field];
         }
         $c['aps'] ??= $defaults['aps'];
+        $c['queue_control'] ??= $defaults['queue_control'];
         if (array_diff(array_keys($c), array_keys($defaults))) throw new \InvalidArgumentException('Unbekannter Konfigurationsbereich.');
         foreach ($defaults as $key => $values) {
             if (!isset($c[$key]) || !is_array($c[$key])) throw new \InvalidArgumentException("Konfigurationsbereich fehlt: $key");
@@ -123,6 +124,27 @@ final class Config
         if (!is_string($t['originate_context']) || !preg_match('/^[a-zA-Z0-9_-]{1,80}$/D', $t['originate_context'])) throw new \InvalidArgumentException('Ungültiger Originate-Kontext.');
         if (!is_string($t['transfer_context']) || !preg_match('/^[a-zA-Z0-9_-]{1,80}$/D', $t['transfer_context'])) throw new \InvalidArgumentException('Ungültiger Transfer-Kontext.');
         self::integer($t['originate_timeout_ms'], 1000, 120000);
+        $qc = $c['queue_control'];
+        if (!is_bool($qc['enabled'])) throw new \InvalidArgumentException('Queue-Steuerung muss boolesch sein.');
+        self::text($qc['state_file'], 2048);
+        if (!str_starts_with($qc['state_file'], '/var/lib/kienzlefon-t2med/') || preg_match('~(?:^|/)\\.{1,2}(?:/|$)~', $qc['state_file']) || str_ends_with($qc['state_file'], '/')) {
+            throw new \InvalidArgumentException('Queue-Statusdatei muss im geschützten Dienstverzeichnis liegen.');
+        }
+        foreach (['default_practice', 'default_special'] as $field) {
+            if (!is_array($qc[$field]) || !array_is_list($qc[$field])) throw new \InvalidArgumentException('Queue-Vorgabe muss eine Liste sein.');
+            foreach ($qc[$field] as $extension) {
+                if (!is_string($extension)) throw new \InvalidArgumentException('Queue-Nebenstellen müssen Strings sein.');
+                self::extension($extension);
+            }
+            if (count($qc[$field]) !== count(array_unique($qc[$field]))) throw new \InvalidArgumentException('Doppelte Queue-Nebenstelle.');
+        }
+        if ($qc['enabled']) {
+            foreach (['default_practice', 'default_special'] as $field) {
+                if (!$qc[$field] || array_diff($qc[$field], array_map('strval', array_keys($t['extensions'])))) {
+                    throw new \InvalidArgumentException('Aktive Queue-Steuerung benötigt mindestens eine gültige Standardnebenstelle pro Queue.');
+                }
+            }
+        }
         self::text($c['gdt']['root'], 2048);
         if (!str_starts_with($c['gdt']['root'], '/') || rtrim($c['gdt']['root'], '/') === '') throw new \InvalidArgumentException('GDT-Root muss ein absolutes Datenverzeichnis sein.');
         if ($c['gdt']['filename'] !== 'AUFRUFi.gdt') throw new \InvalidArgumentException('Importdatei muss AUFRUFi.gdt heißen.');

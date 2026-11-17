@@ -87,7 +87,7 @@ final class Ami extends EventEmitter
     public function action(string $action, array $fields = [], ?string $complete = null, ?string $id = null): PromiseInterface
     {
         if (!$this->stream || (!$this->ready && $action !== 'Login')) return reject(new \RuntimeException('AMI ist nicht verbunden.'));
-        if (!in_array($action, ['Login','Logoff','Ping','CoreShowChannels','QueueStatus','Getvar','Setvar','Originate','BlindTransfer','Atxfer','CancelAtxfer','PlayDTMF'], true)) return reject(new \InvalidArgumentException('AMI-Aktion nicht erlaubt.'));
+        if (!in_array($action, ['Login','Logoff','Ping','CoreShowChannels','QueueStatus','Getvar','Setvar','Originate','BlindTransfer','Atxfer','CancelAtxfer','PlayDTMF','QueuePause','QueueAdd'], true)) return reject(new \InvalidArgumentException('AMI-Aktion nicht erlaubt.'));
         $id ??= 'kf-' . ++$this->sequence;
         if (isset($this->pending[$id])) return reject(new \RuntimeException('Doppelte AMI-Auftragskennung.'));
         try { $wire = self::encode(['Action'=>$action, 'ActionID'=>$id] + $fields); }

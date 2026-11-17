@@ -6,6 +6,7 @@ const extensionLabels = {busy:'BELEGT',ringing:'klingelt',idle:'FREI',offline:'N
 const transferLabels = {preparing:'Vermittlung wird vorbereitet',requested:'Vermittlung angefordert',ringing:'Ziel klingelt',consulting:'Rückfrage läuft',completing:'Vermittlung wird abgeschlossen',cancelling:'Rückkehr zum Anrufer läuft',transferred:'Gespräch vermittelt',cancelled:'Zurück beim Anrufer',failed:'Vermittlung fehlgeschlagen',unknown:'Status ungewiss · Telefon prüfen'};
 let token = '', clients = [], demo = false, polling = false, toastTimer, pollTimer, latestSearch = null, latestData = null, pendingDial = null, pendingTransfer = null, dialBusy = false, transferStartBusy = false, compact = true;
 const opening = new Set(), requestIds = new Map(), expanded = new Set(), transferActions = new Set(), transferRequestIds = new Map(), transferControlIds = new Map(), knownTransfers = new Map();
+const queueActions = new Set();
 const outgoingActions = new Set(), outgoingRetryIds = new Map(), retriedOutgoing = new Set(), dismissedOutgoing = new Set();
 const query = new URLSearchParams(location.search);
 const uuid = () => { const b = crypto.getRandomValues(new Uint8Array(16)); b[6] = (b[6] & 15) | 64; b[8] = (b[8] & 63) | 128; const s = Array.from(b, n => n.toString(16).padStart(2,'0')).join(''); return `${s.slice(0,8)}-${s.slice(8,12)}-${s.slice(12,16)}-${s.slice(16,20)}-${s.slice(20)}`; };
@@ -255,17 +256,75 @@ function render(data, unreachable = false, syncJobs = true) {
   $('more-toggle').textContent = `Nst. (${data.extensions.length})`;
   const extNodes = [], compactExtensions = [];
   for (const ext of data.extensions) {
-    const state = stale ? 'unknown' : ext.state, status = (extensionLabels[state] || state) + (ext.paused ? ' · Pausiert' : '');
-    const node = el('button','extension ' + state); node.dataset.key = ext.id; extensionAction(node,ext,data);
-    const text = el('div'); text.append(el('strong',null,ext.label),el('small',null,status)); node.append(el('div','extension-number',ext.id),text); extNodes.push(node);
-    const small = el('button','compact-extension ' + state); small.dataset.key = ext.id; extensionAction(small,ext,data); small.append(el('strong',null,`${ext.id} · ${ext.label}`),el('span',null,status)); compactExtensions.push(small);
+    const state = stale ? 'unknown' : ext.state, status = extensionLabels[state] || state;
+    const node = el('div','extension ' + state); node.dataset.key = ext.id;
+    const dial = el('button','extension-dial'); extensionAction(dial,ext,data);
+    const text = el('div'); text.append(el('strong',null,ext.label),el('small',null,status));
+    dial.append(el('div','extension-number',ext.id),text); node.append(dial);
+    const options = queueOptions(ext,data);
+    if (options) node.append(options);
+    extNodes.push(node);
+    const row = el('div','compact-extension-row'); row.dataset.key = ext.id;
+    const small = el('button','compact-extension ' + state); extensionAction(small,ext,data);
+    small.append(el('strong',null,ext.id + ' · ' + ext.label),el('span',null,status)); row.append(small);
+    const compactOptions = queueOptions(ext,data,true);
+    if (compactOptions) row.append(compactOptions);
+    compactExtensions.push(row);
   }
   reconcile($('extensions'),extNodes); reconcile($('compact-extensions'),compactExtensions);
+  // Reconcile preserves focused controls; synchronize the checked property as well.
+  for (const checkbox of document.querySelectorAll('input[data-action="queue-toggle"]')) {
+    const queue = checkbox.dataset.queue, ext = checkbox.dataset.extension;
+    checkbox.checked = Boolean(data.queue_control?.selection?.[queue]?.[ext]);
+    checkbox.disabled = !data.queue_control?.ready || queueActions.size > 0 ||
+      (checkbox.checked && Object.values(data.queue_control?.selection?.[queue] || {}).filter(Boolean).length <= 1);
+  }
   renderTransfers(stale); updateTransferDialogState();
   $('updated').textContent = stale ? 'Nicht aktuell' : new Date(data.generated_at).toLocaleTimeString('de-DE',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
   renderOutgoing();
   const presentKeys = new Set([...own.map(c => `own-${c.id}`),...others.map(c => `all-${c.id}`),...compactWaiting.map(n => n.dataset.key)]);
   for (const key of expanded) if (!presentKeys.has(key)) expanded.delete(key);
+}
+function queueOptions(ext, data, compactRow = false) {
+  const control = data.queue_control;
+  if (!control?.enabled) return null;
+  const wrap = el('div', compactRow ? 'queue-toggles compact-queue-toggles' : 'queue-toggles');
+  for (const [queue, label] of [['praxis','Normal'], ['kienzlefon-sonder','IVR 9']]) {
+    const selected = Boolean(control.selection?.[queue]?.[ext.id]);
+    const active = Object.values(control.selection?.[queue] || {}).filter(Boolean).length;
+    const line = el('label','queue-toggle');
+    const box = el('input');
+    box.type = 'checkbox';
+    box.dataset.action = 'queue-toggle'; box.dataset.queue = queue; box.dataset.extension = ext.id;
+    box.checked = selected;
+    if (selected) box.setAttribute('checked','');
+    box.disabled = !control.ready || queueActions.size > 0 || (selected && active <= 1);
+    if (box.disabled) box.setAttribute('disabled','');
+    box.setAttribute('aria-label',label + ': ' + ext.label + ' (' + ext.id + ')');
+    line.append(box,el('span',null,label));
+    wrap.append(line);
+  }
+  return wrap;
+}
+async function changeQueue(queue, extension, enabled) {
+  const data = latestData, control = data?.queue_control;
+  if (!control?.ready || queueActions.size ||
+      !Object.prototype.hasOwnProperty.call(control.selection?.[queue] || {},extension)) return;
+  queueActions.add(queue + ':' + extension);
+  if (data) render(data);
+  try {
+    const result = await api('/api/v1/queues/selection',{queue,extension,enabled});
+    if (latestData?.queue_control) latestData.queue_control = result;
+    toast('Nebenstelle ' + extension + ': ' +
+      (queue === 'praxis' ? 'Normale Queue' : 'IVR 9') +
+      (enabled ? ' aktiviert.' : ' pausiert.'));
+  } catch(e) {
+    toast(e.message,true);
+  } finally {
+    queueActions.clear();
+    if (latestData) render(latestData);
+    poll();
+  }
 }
 function extensionDialReason(target,data = latestData) {
   const client = clients.find(c => c.id === $('client').value);
@@ -484,6 +543,12 @@ document.addEventListener('click',e => {
   else if (action === 'outgoing-dismiss') dismissOutgoing(button.dataset.requestId);
   else if (action === 'outgoing-cleanup') cleanupOutgoing();
   else if (action === 'popup') { const url = new URL('/',location.origin); url.searchParams.set('view','compact'); if ($('client').value) url.searchParams.set('client_id',$('client').value); window.open(url,'kienzlefon-compact','popup=yes,width=320,height=240'); }
+});
+document.addEventListener('change',e => {
+  if (!e.target.matches('input[data-action="queue-toggle"]')) return;
+  const checkbox = e.target, selected = checkbox.checked;
+  checkbox.checked = !selected; // Keep the last confirmed state until the server accepts.
+  changeQueue(checkbox.dataset.queue,checkbox.dataset.extension,selected);
 });
 document.addEventListener('visibilitychange',() => { if (!document.hidden) poll(); });
 async function boot() {
